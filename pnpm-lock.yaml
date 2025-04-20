@@ -15,6 +15,9 @@ importers:
         specifier: ^11.1.0
         version: 11.1.0
     devDependencies:
+      '@types/node':
+        specifier: ^22.14.1
+        version: 22.14.1
       eslint:
         specifier: ^9.25.0
         version: 9.25.0

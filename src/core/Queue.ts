@@ -52,10 +52,25 @@ export class Queue<T = any> extends EventEmitter {
       job.resolve();
       this.next();
     });
+
+    this.once(`job:fail:${job.id}`, (error?: Error) => {
+      clearTimeout(timeout);
+      job.status = 'failed';
+      if (error) {
+        job.reject(error);
+      } else {
+        job.reject(new Error('Job failed without specific error'));
+      }
+      this.next();
+    });
   }
 
   public completeJob(jobId: string) {
     this.emit(`job:complete:${jobId}`);
+  }
+
+  public failJob(jobId: string, error?: Error) {
+    this.emit(`job:fail:${jobId}`, error);
   }
 
   private next() {
@@ -70,5 +85,15 @@ export class Queue<T = any> extends EventEmitter {
 
   public isRunning() {
     return this.running;
+  }
+
+  public getPendingJobs(): Job<T>[] {
+    // Return a copy of all jobs that are not running (index > 0)
+    return this.queue.slice(1);
+  }
+
+  public getCurrentJob(): Job<T> | null {
+    // Return the currently running job, if any
+    return this.running && this.queue.length > 0 ? this.queue[0] : null;
   }
 }
