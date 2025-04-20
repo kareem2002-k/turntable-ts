@@ -6,8 +6,14 @@ export interface Job<T = any> {
   timeoutMs?: number;
   createdAt: number;
   status: JobStatus;
-  resolve: () => void;
-  reject: (err: Error) => void;
+  startedAt?: number;
+  completedAt?: number;
+  timeoutRef?: NodeJS.Timeout;
+  error?: Error;
+  
+  // Callback-style for better threading model
+  onComplete?: () => void;
+  onError?: (err: Error) => void;
 }
 
 export interface QueueOptions {
@@ -18,4 +24,5 @@ export interface QueueOptions {
 export interface ManagerOptions {
   queueCount: number;
   timeoutMs?: number;
+  concurrencyPerQueue?: number; // Default = 1 
 }
