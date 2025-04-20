@@ -1,3 +1,13 @@
+// Export main components
+export { QueueManager } from './lib/QueueManager';
+export { Queue } from './lib/Queue';
+
+// Export types
+export * from './lib/types';
+
+// Export API integration helpers
+export * from './lib/ApiIntegration';
+
 import { QueueManager } from './core/QueueManager';
 import * as readline from 'readline';
 import chalk from 'chalk';

@@ -1,29 +1,45 @@
 {
-  "name": "turntable-ts",
+  "name": "turntable-queue",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Multi-threaded job queue system with concurrent processing",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "ts-node src/index.ts",
-    "dev": "nodemon --watch src --ext ts --exec ts-node src/index.ts"
+    "build": "tsc",
+    "start": "ts-node src/examples/server.ts",
+    "dev": "ts-node-dev --respawn src/examples/server.ts",
+    "webhook-system": "ts-node src/examples/run-webhook-system.ts",
+    "test": "jest"
   },
-  "keywords": [],
+  "keywords": [
+    "queue",
+    "job",
+    "worker",
+    "threading",
+    "concurrent",
+    "webhook"
+  ],
   "author": "",
-  "license": "ISC",
-  "packageManager": "pnpm@10.6.1",
+  "license": "MIT",
   "dependencies": {
-    "chalk": "4",
+    "axios": "^1.8.4",
+    "chalk": "^5.4.1",
     "eventemitter3": "^5.0.1",
-    "uuid": "^11.1.0"
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
+    "@types/express": "^4.17.17",
     "@types/node": "^22.14.1",
-    "eslint": "^9.25.0",
-    "nodemon": "^3.1.9",
-    "prettier": "^3.5.3",
+    "@types/uuid": "^9.0.0",
+    "express": "^4.21.2",
     "ts-node": "^10.9.2",
-    "tsup": "^8.4.0",
+    "ts-node-dev": "^2.0.0",
     "typescript": "^5.8.3"
+  },
+  "peerDependencies": {
+    "express": "^4.0.0"
   }
 }
