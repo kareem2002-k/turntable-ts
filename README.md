@@ -1,208 +1,140 @@
-# Turntable Queue
+# Turntable Queue System with Prisma and Supabase Persistence
 
-A powerful multi-threaded job queue system with concurrent processing, designed for Node.js applications.
+A robust, scalable job queue system with built-in persistence via Prisma and Supabase.
 
 ## Features
 
-- Multiple independent queues (threads) that can process jobs concurrently
-- Configurable concurrency per queue for maximum performance
-- Built-in support for job timeouts and error handling
-- Express.js API integration for easy web API usage
-- Webhook handling for external service callbacks
-- Event-based architecture for real-time monitoring
+- **Distributed Queue System**: Handle jobs across multiple threads
+- **Persistence**: Store jobs in Supabase PostgreSQL to survive restarts
+- **Automatic Recovery**: Automatically recover failed or interrupted jobs
+- **Batch Processing**: Efficient database operations with batching
+- **Scaling Support**: Seamlessly scale up or down the number of queues
+- **REST API Integration**: Easy-to-use API endpoints
+- **Monitoring**: View queue stats and health
 
-## Installation
+## Quick Start
+
+### Using Docker (Recommended)
+
+1. Clone the repository
+2. Create a `.env` file based on `.env.example`
+3. Run with Docker Compose:
 
 ```bash
-npm install turntable-queue
-# or
-yarn add turntable-queue
-# or
-pnpm add turntable-queue
+docker-compose up -d
 ```
 
-## Basic Usage
+### Manual Setup
 
-### Initialize the Queue Manager
+1. Clone the repository
+2. Install dependencies:
 
-```typescript
-import { QueueManager } from 'turntable-queue';
-
-// Create a queue manager with 3 queues, each processing 2 jobs concurrently
-const queueManager = new QueueManager({
-  queueCount: 3,
-  timeoutMs: 30000, // 30 seconds default timeout
-  concurrencyPerQueue: 2
-});
-
-// Listen to queue events
-queueManager.on('job:started', (data) => {
-  console.log(`Job ${data.id} started in queue #${data.queueIndex}`);
-});
-
-queueManager.on('job:completed', (data) => {
-  console.log(`Job ${data.id} completed in queue #${data.queueIndex}`);
-});
-
-// Add jobs to the queue
-const jobId = await queueManager.addJob({ 
-  type: 'process-data',
-  payload: { /* data to process */ }
-});
-
-// Mark a job as completed (typically from a webhook)
-queueManager.completeJob(jobId);
-
-// Mark a job as failed
-queueManager.failJob(jobId, new Error('Processing failed'));
+```bash
+npm install
 ```
 
-## API Integration with Express
+3. Set up Supabase and get your connection details
+4. Create a `.env` file based on `.env.example` with your Supabase connection
+5. Generate Prisma client:
 
-### Create API Routes
-
-```typescript
-import express from 'express';
-import { QueueManager, createQueueApiRoutes } from 'turntable-queue';
-
-const app = express();
-app.use(express.json());
-
-const queueManager = new QueueManager({
-  queueCount: 3,
-  timeoutMs: 30000,
-  concurrencyPerQueue: 2
-});
-
-// Create and mount API routes
-const queueRoutes = createQueueApiRoutes(queueManager, {
-  // Optional configuration
-  transformJobData: (data) => ({
-    ...data,
-    queuedAt: new Date().toISOString()
-  }),
-  validateWebhook: (req) => {
-    // Validate webhook requests
-    return true; // Implement your validation logic
-  }
-});
-
-// Mount routes at /api/queue
-app.use('/api/queue', queueRoutes);
-
-// This creates the following endpoints:
-// - POST /api/queue/jobs - Add a job to the queue
-// - POST /api/queue/webhook - Handle webhooks
-// - GET /api/queue/jobs/status - Get queue stats
+```bash
+npx prisma generate
 ```
 
-### Using in Your API
+6. Run migrations:
 
-```typescript
-// Example API endpoint that adds jobs to the queue
-app.post('/api/process-something', async (req, res) => {
-  try {
-    const { data } = req.body;
-    
-    // Add to queue instead of processing immediately
-    const jobId = await queueManager.addJob({ 
-      type: 'process-data',
-      payload: data,
-      requestedAt: new Date().toISOString(),
-    });
-    
-    // Return job ID to client
-    return res.json({
-      success: true,
-      jobId,
-      message: 'Request queued for processing',
-    });
-    
-  } catch (error) {
-    return res.status(500).json({ 
-      success: false, 
-      error: error.message
-    });
-  }
-});
+```bash
+npx prisma migrate dev --name init
 ```
 
-## Webhook Handling
+7. Start the server:
 
-When an external service completes processing, it can call back to your webhook endpoint:
-
+```bash
+npm run dev
 ```
-POST /api/queue/webhook
+
+## Configuration
+
+Configuration is managed through environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `QUEUE_COUNT` | Number of parallel queues/threads | 3 |
+| `QUEUE_CONCURRENCY` | Jobs processed concurrently per queue | 1 |
+| `QUEUE_TIMEOUT_MS` | Default job timeout (milliseconds) | 60000 |
+| `PERSISTENCE_ENABLED` | Enable/disable persistence | true |
+| `PERSISTENCE_BATCH_SIZE` | Number of jobs in a batch operation | 100 |
+| `DATABASE_URL` | Supabase PostgreSQL connection string | - |
+
+## API Endpoints
+
+The system exposes the following API endpoints:
+
+### Adding a Job
+
+```http
+POST /api/tasks
+```
+
+Request body:
+```json
 {
-  "jobId": "job-123",
-  "status": "success", // or "failed"
-  "data": { /* result data */ },
-  "error": "Error message if failed"
+  "payload": {
+    "task": "example-task",
+    "data": { "key": "value" }
+  },
+  "priority": "normal",
+  "customTimeout": 120000
 }
 ```
 
-## Complete Webhook System Example
+### Monitoring Queue Status
 
-This package includes a complete webhook-based processing system example that demonstrates:
-
-1. An API server that receives requests and adds them to the queue
-2. A task connector that forwards queued jobs to an external service
-3. An external service simulator that processes jobs and returns results via webhook
-4. Automatic job timeout handling if no webhook is received
-
-### Running the Webhook System Example
-
-To run the complete webhook system:
-
-```bash
-# Install dependencies
-npm install
-
-# Run the webhook system
-npm run webhook-system
+```http
+GET /api/status
 ```
 
-This will start:
-- API server on port 3000
-- External service simulator on port 3001
+### Cleaning Up Old Jobs
 
-### Webhook System Flow
-
-```
-                   ┌─────────────────┐
-                   │                 │
- ┌─────────┐       │  Queue System   │       ┌─────────────────┐
- │         │       │                 │       │                 │
- │  API    │──────▶│  QueueManager   │──────▶│ Task Connector  │
- │ Request │       │                 │       │                 │
- └─────────┘       │  (Multiple      │       └────────┬────────┘
-                   │   threads)      │                │
-                   │                 │                │
-                   └─────────────────┘                │
-                            ▲                         │
-                            │                         │
-                            │                         ▼
-                   ┌─────────────────┐       ┌─────────────────┐
-                   │                 │       │                 │
-                   │    Webhook     │◀──────│External Service  │
-                   │    Handler     │       │                 │
-                   │                 │       │                 │
-                   └─────────────────┘       └─────────────────┘
+```http
+POST /api/jobs/cleanup
 ```
 
-### Example API Calls
-
-1. Submit a task to the queue:
-```bash
-curl -X POST http://localhost:3000/api/tasks \
-  -H "Content-Type: application/json" \
-  -d '{"payload": {"action": "process-data", "data": {"id": 123}}, "customTimeout": 30000}'
+Request body:
+```json
+{
+  "ageInDays": 7
+}
 ```
 
-2. Check queue status:
-```bash
-curl http://localhost:3000/api/status
+## Scaling
+
+The queue system automatically handles scaling up or down:
+
+```typescript
+// To add more queues:
+await queueManager.updateQueueCount(5);
+
+// To decrease queue count:
+await queueManager.updateQueueCount(2);
 ```
+
+When decreasing the queue count, pending jobs are automatically redistributed to remaining queues.
+
+## Recovery
+
+The system automatically recovers:
+- On startup, loading any pending jobs from the database
+- When a queue is removed, redistributing its jobs
+- If the server crashed, automatically restarting pending jobs
+
+## Best Practices
+
+1. **Use Docker Compose**: For consistent environment setup
+2. **Adjust Batch Size**: Tune `PERSISTENCE_BATCH_SIZE` based on your load
+3. **Configure Concurrency**: Set appropriate `QUEUE_CONCURRENCY` for your workload
+4. **Set Appropriate Timeouts**: Configure job timeouts to avoid stalled jobs
+5. **Run Cleanup Regularly**: Use the cleanup endpoint to remove old completed jobs
 
 ## License
 

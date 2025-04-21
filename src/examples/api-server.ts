@@ -7,11 +7,21 @@ import { createTaskConnector } from './task-connector';
 const app = express();
 app.use(express.json());
 
+// Load environment variables or use defaults
+const QUEUE_COUNT = parseInt(process.env.QUEUE_COUNT || '3', 10);
+const QUEUE_CONCURRENCY = parseInt(process.env.QUEUE_CONCURRENCY || '1', 10);
+const QUEUE_TIMEOUT_MS = parseInt(process.env.QUEUE_TIMEOUT_MS || '60000', 10);
+const PERSISTENCE_ENABLED = process.env.PERSISTENCE_ENABLED !== 'false';
+const PERSISTENCE_BATCH_SIZE = parseInt(process.env.PERSISTENCE_BATCH_SIZE || '100', 10);
+
 // Initialize the Queue Manager with desired settings
 const queueManager = new QueueManager({
-  queueCount: 3,               // Number of parallel queues (threads)
-  timeoutMs: 60000,            // Default timeout (60 seconds)
-  concurrencyPerQueue: 1,      // Each queue can process 2 jobs at once
+  queueCount: QUEUE_COUNT,
+  timeoutMs: QUEUE_TIMEOUT_MS,
+  concurrencyPerQueue: QUEUE_CONCURRENCY,
+  // Persistence options
+  persistence: PERSISTENCE_ENABLED,
+  persistenceBatchSize: PERSISTENCE_BATCH_SIZE
 });
 
 // Helper function to draw queue visualization
@@ -168,6 +178,27 @@ app.post('/api/connector/toggle', (req, res) => {
   }
 });
 
+// Endpoint to clean up old jobs
+app.post('/api/jobs/cleanup', async (req, res) => {
+  try {
+    const { ageInDays = 7 } = req.body;
+    const count = await queueManager.cleanupOldJobs(ageInDays);
+    
+    console.log(`[API] Cleaned up ${count} old jobs`);
+    return res.json({
+      success: true,
+      message: `Cleaned up ${count} old jobs`,
+      count
+    });
+  } catch (error) {
+    console.error('[API] Error cleaning up old jobs:', error);
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 // Endpoint to retrieve current queue status
 app.get('/api/status', (req, res) => {
   try {
@@ -196,6 +227,10 @@ app.get('/api/status', (req, res) => {
         status: taskConnector.isRunning ? 'running' : 'paused',
         externalServiceUrl: taskConnector.externalServiceUrl
       },
+      persistence: {
+        enabled: PERSISTENCE_ENABLED,
+        batchSize: PERSISTENCE_BATCH_SIZE
+      },
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -213,8 +248,9 @@ app.listen(PORT, () => {
   console.log(`
 ✅ Queue API Server running on port ${PORT}
    - ${queueManager.getStats().length} threads × ${queueManager.getStats()[0].maxConcurrency} concurrent jobs = ${queueManager.getStats().length * queueManager.getStats()[0].maxConcurrency} capacity
-   - Default timeout: ${60000 / 1000}s
+   - Default timeout: ${QUEUE_TIMEOUT_MS / 1000}s
    - External service: ${taskConnector.externalServiceUrl}
+   - Persistence: ${PERSISTENCE_ENABLED ? 'ENABLED' : 'DISABLED'}
   `);
   console.log(visualizeQueues());
 }); 

@@ -1,7 +1,7 @@
 {
-  "name": "turntable-queue",
+  "name": "turntable-ts",
   "version": "1.0.0",
-  "description": "Multi-threaded job queue system with concurrent processing",
+  "description": "A robust queue system with persistence",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
@@ -9,10 +9,13 @@
   ],
   "scripts": {
     "build": "tsc",
-    "start": "ts-node src/examples/server.ts",
-    "dev": "ts-node-dev --respawn src/examples/server.ts",
-    "webhook-system": "ts-node src/examples/run-webhook-system.ts",
+    "dev": "ts-node-dev --respawn --transpile-only src/examples/api-server.ts",
+    "start": "node dist/examples/api-server.js",
     "test": "jest",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate deploy",
+    "prisma:studio": "prisma studio",
+    "webhook-system": "ts-node src/examples/run-webhook-system.ts",
     "api-server": "ts-node src/examples/api-server.ts",
     "external-service": "ts-node src/examples/external-service.ts",
     "test-client": "ts-node src/examples/test-client.ts",
@@ -20,28 +23,33 @@
   },
   "keywords": [
     "queue",
-    "job",
-    "worker",
-    "threading",
-    "concurrent",
-    "webhook"
+    "job-queue",
+    "task-queue",
+    "persistence",
+    "prisma",
+    "supabase"
   ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "axios": "^1.8.4",
-    "chalk": "^5.4.1",
+    "@prisma/client": "^5.9.0",
+    "axios": "^1.6.5",
+    "express": "^4.18.2",
     "eventemitter3": "^5.0.1",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
-    "@types/express": "^4.17.17",
-    "@types/node": "^22.14.1",
-    "@types/uuid": "^9.0.0",
-    "express": "^4.21.2",
+    "@types/express": "^4.17.21",
+    "@types/jest": "^29.5.11",
+    "@types/node": "^20.10.5",
+    "@types/uuid": "^9.0.7",
+    "dotenv": "^16.3.1",
+    "jest": "^29.7.0",
+    "prisma": "^5.9.0",
+    "ts-jest": "^29.1.1",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.3.3"
   },
   "peerDependencies": {
     "express": "^4.0.0"

@@ -41,6 +41,29 @@ export class Queue<T = any> extends EventEmitter {
       return jobId;
     });
   }
+  
+  /**
+   * Add an existing job (used for recovery from persistence)
+   * 
+   * @param job An existing job object
+   * @returns The job ID
+   */
+  async addExistingJob(job: Job<T>): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      // Make sure it's set to pending
+      job.status = 'pending';
+      
+      // Set callbacks
+      job.onComplete = () => resolve(job.id);
+      job.onError = (err) => reject(err);
+      
+      // Add to queue
+      this.queue.push(job);
+      this.emit('job:queued', job);
+      
+      return job.id;
+    });
+  }
 
   private startWorker() {
     if (this.workerTimer) {

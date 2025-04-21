@@ -1,0 +1,36 @@
+// This is your Prisma schema file for job persistence
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Job status enum matching our application type
+enum JobStatus {
+  pending
+  running
+  completed
+  failed
+  timed_out
+}
+
+// Persistent job model
+model Job {
+  id          String    @id
+  data        Json      // Stores the job data as JSON
+  status      JobStatus @default(pending)
+  queueIndex  Int       // Which queue this job belongs to
+  createdAt   DateTime  @default(now())
+  startedAt   DateTime? 
+  completedAt DateTime?
+  timeoutMs   Int?      // Optional timeout milliseconds
+  error       String?   // Error message if job failed
+  retryCount  Int       @default(0) // For tracking retries
+  
+  @@index([status]) // Index to query by status efficiently
+  @@index([queueIndex, status]) // Index to query by queue and status
+} 

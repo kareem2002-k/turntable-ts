@@ -25,4 +25,8 @@ export interface ManagerOptions {
   queueCount: number;
   timeoutMs?: number;
   concurrencyPerQueue?: number; // Default = 1 
+  
+  // Persistence options
+  persistence?: boolean; // Enable/disable persistence (default = true)
+  persistenceBatchSize?: number; // Batch size for database operations (default = 100)
 }
