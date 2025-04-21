@@ -1,19 +1,28 @@
-// Export main components
+// Main classes
 export { QueueManager } from './core/QueueManager';
-export { Queue } from './core/Queue';
+export { PersistentQueueManager } from './core/PersistentQueueManager';
+export { createQueueApiRoutes } from './lib/ApiIntegration';
 
-// Export types
-export * from './core/types';
+// Types
+export type { 
+  Job, 
+  JobStatus, 
+  QueueOptions, 
+  ManagerOptions 
+} from './core/types';
 
-// Export API integration helpers
-export * from './lib/ApiIntegration';
+export type { 
+  PersistentQueueOptions 
+} from './core/PersistentQueueManager';
 
-// Export examples/helpers
-export { TaskConnector, createTaskConnector } from './examples/task-connector';
+export type {
+  WebhookCallback,
+  JobRequest
+} from './lib/types';
 
 // Add a default export with basic information
 export default {
   name: 'turntable-queue',
-  description: 'Multi-threaded job queue system with concurrent processing',
+  description: 'Persistent job queue system with Prisma/Supabase integration',
   version: '1.0.0'
 };

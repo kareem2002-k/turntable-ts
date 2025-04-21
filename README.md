@@ -1,140 +1,179 @@
-# Turntable Queue System with Prisma and Supabase Persistence
+# Turntable Queue
 
-A robust, scalable job queue system with built-in persistence via Prisma and Supabase.
+A drop-in persistent job queue system for Node.js projects using Prisma and Supabase.
 
 ## Features
 
-- **Distributed Queue System**: Handle jobs across multiple threads
-- **Persistence**: Store jobs in Supabase PostgreSQL to survive restarts
-- **Automatic Recovery**: Automatically recover failed or interrupted jobs
+- **Persistent Queue**: Store jobs in your Supabase PostgreSQL database
+- **Automatic Recovery**: Automatically recover jobs after server restart or crashes
+- **Minimal Setup**: Just run one command to set up your Prisma schema
 - **Batch Processing**: Efficient database operations with batching
-- **Scaling Support**: Seamlessly scale up or down the number of queues
-- **REST API Integration**: Easy-to-use API endpoints
-- **Monitoring**: View queue stats and health
+- **Scale On Demand**: Add or remove worker queues at runtime
+- **Express Integration**: Easy to integrate with your Express app
 
 ## Quick Start
 
-### Using Docker (Recommended)
-
-1. Clone the repository
-2. Create a `.env` file based on `.env.example`
-3. Run with Docker Compose:
+### 1. Install the package
 
 ```bash
-docker-compose up -d
+npm install turntable-queue @prisma/client
 ```
 
-### Manual Setup
+### 2. Set up your Prisma schema
 
-1. Clone the repository
-2. Install dependencies:
+The easiest way is to use our setup script:
 
 ```bash
-npm install
+npx turntable-setup
 ```
 
-3. Set up Supabase and get your connection details
-4. Create a `.env` file based on `.env.example` with your Supabase connection
-5. Generate Prisma client:
+This will add the required Job model to your Prisma schema. Then run a migration:
 
 ```bash
-npx prisma generate
+npx prisma migrate dev --name add_job_queue
 ```
 
-6. Run migrations:
+### 3. Start using the queue in your app
 
-```bash
-npx prisma migrate dev --name init
+```typescript
+import { PersistentQueueManager } from 'turntable-queue';
+import { PrismaClient } from '@prisma/client';
+
+// Create a Prisma client (optional)
+const prisma = new PrismaClient();
+
+// Create a persistent queue manager
+const queueManager = new PersistentQueueManager({
+  queueCount: 2,                      // Number of worker queues
+  concurrencyPerQueue: 3,             // Jobs processed concurrently per queue
+  prismaClient: prisma,               // Use your existing Prisma client
+  autoCleanupDays: 7,                 // Auto-clean completed jobs after 7 days
+});
+
+// Listen for events (optional)
+queueManager.on('job:completed', (data) => {
+  console.log(`Job ${data.id} completed!`);
+});
+
+// Add a job to the queue
+const jobId = await queueManager.addJob({
+  task: 'process-image',
+  data: { imageUrl: 'https://example.com/image.jpg' }
+});
+
+console.log(`Job added with ID: ${jobId}`);
+
+// Mark a job as complete (e.g., after processing)
+queueManager.completeJob(jobId);
+
+// Mark a job as failed
+queueManager.failJob(jobId, new Error('Processing failed'));
+
+// Clean up resources on shutdown
+process.on('SIGTERM', async () => {
+  await queueManager.shutdown();
+});
 ```
 
-7. Start the server:
+## Express Integration Example
 
-```bash
-npm run dev
+```typescript
+import express from 'express';
+import { PersistentQueueManager } from 'turntable-queue';
+
+const app = express();
+app.use(express.json());
+
+const queueManager = new PersistentQueueManager({
+  queueCount: 2,
+  autoCleanupDays: 7
+});
+
+// Add a job endpoint
+app.post('/api/jobs', async (req, res) => {
+  try {
+    const jobId = await queueManager.addJob(req.body);
+    res.status(202).json({ jobId });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Webhook for external service to mark job as complete
+app.post('/api/webhook', (req, res) => {
+  const { jobId, status, error } = req.body;
+  
+  if (status === 'success') {
+    queueManager.completeJob(jobId);
+  } else {
+    queueManager.failJob(jobId, new Error(error || 'Job failed'));
+  }
+  
+  res.json({ success: true });
+});
+
+app.listen(3000);
 ```
 
-## Configuration
+## Configuration Options
 
-Configuration is managed through environment variables:
+The `PersistentQueueManager` accepts these options:
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `QUEUE_COUNT` | Number of parallel queues/threads | 3 |
-| `QUEUE_CONCURRENCY` | Jobs processed concurrently per queue | 1 |
-| `QUEUE_TIMEOUT_MS` | Default job timeout (milliseconds) | 60000 |
-| `PERSISTENCE_ENABLED` | Enable/disable persistence | true |
-| `PERSISTENCE_BATCH_SIZE` | Number of jobs in a batch operation | 100 |
-| `DATABASE_URL` | Supabase PostgreSQL connection string | - |
-
-## API Endpoints
-
-The system exposes the following API endpoints:
-
-### Adding a Job
-
-```http
-POST /api/tasks
-```
-
-Request body:
-```json
-{
-  "payload": {
-    "task": "example-task",
-    "data": { "key": "value" }
-  },
-  "priority": "normal",
-  "customTimeout": 120000
-}
-```
-
-### Monitoring Queue Status
-
-```http
-GET /api/status
-```
-
-### Cleaning Up Old Jobs
-
-```http
-POST /api/jobs/cleanup
-```
-
-Request body:
-```json
-{
-  "ageInDays": 7
-}
-```
+| Option | Description | Default |
+|--------|-------------|---------|
+| `queueCount` | Number of parallel queues | Required |
+| `concurrencyPerQueue` | Jobs processed concurrently per queue | 1 |
+| `timeoutMs` | Default job timeout (milliseconds) | 30000 |
+| `prismaClient` | Your existing Prisma client | Auto-created |
+| `autoCleanupDays` | Auto-clean completed jobs older than X days | 0 (disabled) |
+| `cleanupInterval` | How often to run cleanup (milliseconds) | 86400000 (1 day) |
+| `persistenceBatchSize` | Number of jobs in a batch operation | 100 |
 
 ## Scaling
 
-The queue system automatically handles scaling up or down:
+You can dynamically adjust the number of queues:
 
 ```typescript
-// To add more queues:
+// Add more processing capacity
 await queueManager.updateQueueCount(5);
 
-// To decrease queue count:
+// Scale down when load is lower
 await queueManager.updateQueueCount(2);
 ```
 
-When decreasing the queue count, pending jobs are automatically redistributed to remaining queues.
+Jobs from removed queues are automatically redistributed to remaining queues.
 
-## Recovery
+## Using with Existing Prisma Projects
 
-The system automatically recovers:
-- On startup, loading any pending jobs from the database
-- When a queue is removed, redistributing its jobs
-- If the server crashed, automatically restarting pending jobs
+If you already have a complex Prisma schema, you can manually add the Job model:
 
-## Best Practices
+```prisma
+enum JobStatus {
+  pending
+  running
+  completed
+  failed
+  timed_out
+}
 
-1. **Use Docker Compose**: For consistent environment setup
-2. **Adjust Batch Size**: Tune `PERSISTENCE_BATCH_SIZE` based on your load
-3. **Configure Concurrency**: Set appropriate `QUEUE_CONCURRENCY` for your workload
-4. **Set Appropriate Timeouts**: Configure job timeouts to avoid stalled jobs
-5. **Run Cleanup Regularly**: Use the cleanup endpoint to remove old completed jobs
+model Job {
+  id          String    @id
+  data        Json
+  status      JobStatus @default(pending)
+  queueIndex  Int
+  createdAt   DateTime  @default(now())
+  startedAt   DateTime?
+  completedAt DateTime?
+  timeoutMs   Int?
+  error       String?
+  retryCount  Int       @default(0)
+  
+  @@index([status])
+  @@index([queueIndex, status])
+}
+```
+
+Then run `npx prisma generate` to update your Prisma client.
 
 ## License
 
