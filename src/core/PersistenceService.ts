@@ -1,4 +1,3 @@
-import { PrismaClient, Job as PrismaJob, JobStatus as PrismaJobStatus } from '@prisma/client';
 import { Job, JobStatus } from './types';
 import { v4 as uuid } from 'uuid';
 
@@ -6,14 +5,18 @@ import { v4 as uuid } from 'uuid';
  * Handles persisting queue jobs to the database and recovering them
  */
 export class PersistenceService<T = any> {
-  private prisma: PrismaClient;
+  private prisma: any;
   private batchSize: number = 100; // Number of jobs to batch in a single operation
   private isSyncing: boolean = false;
-  private pendingSyncJobs: Map<string, Job<T>> = new Map();
+  private pendingSyncJobs: Map<string, any> = new Map();
   private syncInterval: NodeJS.Timeout | null = null;
   
-  constructor(options: { batchSize?: number } = {}) {
-    this.prisma = new PrismaClient();
+  constructor(options: { prismaClient: any; batchSize?: number }) {
+    if (!options.prismaClient) {
+      throw new Error('PersistenceService requires a prismaClient parameter');
+    }
+    this.prisma = options.prismaClient;
+    
     if (options.batchSize) {
       this.batchSize = options.batchSize;
     }
@@ -73,11 +76,14 @@ export class PersistenceService<T = any> {
         const queueIndex = (job as any).queueIndex ?? 0;
         delete (job as any).queueIndex; // Remove internal property
         
+        // Ensure data is properly stored as JSON or string depending on the DB
+        const jobData = job.data;
+        
         return this.prisma.job.upsert({
           where: { id: job.id },
           create: {
             id: job.id,
-            data: job.data as any,
+            data: jobData, // PostgreSQL handles JSON data automatically
             status: this.mapStatusToPrisma(job.status),
             queueIndex,
             timeoutMs: job.timeoutMs || null,
@@ -155,10 +161,25 @@ export class PersistenceService<T = any> {
         targetQueueIndex = targetQueueIndex % queueCount;
       }
       
+      // Parse data from the database (handle PostgreSQL JSON or SQLite string)
+      let jobData: any;
+      try {
+        // If data is already an object (PostgreSQL returns parsed JSON)
+        if (typeof prismaJob.data === 'object') {
+          jobData = prismaJob.data;
+        } else {
+          // If data is a string (SQLite), parse it
+          jobData = JSON.parse(prismaJob.data);
+        }
+      } catch (e) {
+        // If parsing fails, use the raw data
+        jobData = prismaJob.data;
+      }
+      
       // Convert back to our Job model
       const job: Job<T> = {
         id: prismaJob.id,
-        data: prismaJob.data as unknown as T,
+        data: jobData as T,
         createdAt: new Date(prismaJob.createdAt).getTime(),
         status: this.mapStatusFromPrisma(prismaJob.status),
         timeoutMs: prismaJob.timeoutMs || undefined,
@@ -207,14 +228,14 @@ export class PersistenceService<T = any> {
   /**
    * Map our status to Prisma status
    */
-  private mapStatusToPrisma(status: JobStatus): PrismaJobStatus {
-    return status as PrismaJobStatus; // They should be the same
+  private mapStatusToPrisma(status: JobStatus): string {
+    return status; // They should be the same
   }
   
   /**
    * Map Prisma status to our status
    */
-  private mapStatusFromPrisma(status: PrismaJobStatus): JobStatus {
+  private mapStatusFromPrisma(status: string): JobStatus {
     return status as JobStatus; // They should be the same
   }
   
@@ -230,7 +251,5 @@ export class PersistenceService<T = any> {
     if (this.pendingSyncJobs.size > 0) {
       await this.flushPendingJobs();
     }
-    
-    await this.prisma.$disconnect();
   }
 } 

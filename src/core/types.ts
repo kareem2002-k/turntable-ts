@@ -29,4 +29,7 @@ export interface ManagerOptions {
   // Persistence options
   persistence?: boolean; // Enable/disable persistence (default = true)
   persistenceBatchSize?: number; // Batch size for database operations (default = 100)
+  
+  // External Prisma client
+  prismaClient?: any; // Required if persistence is enabled
 }

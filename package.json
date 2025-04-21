@@ -13,8 +13,6 @@
   },
   "scripts": {
     "build": "tsc",
-    "dev:simple": "ts-node-dev --respawn --transpile-only src/examples/simple-usage.ts",
-    "dev:basic": "ts-node-dev --respawn --transpile-only src/examples/basic-usage.ts",
     "test": "jest",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

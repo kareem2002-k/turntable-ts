@@ -1,12 +1,11 @@
-import { PrismaClient } from '@prisma/client';
 import { QueueManager } from './QueueManager';
 import { Job, ManagerOptions } from './types';
 
 export interface PersistentQueueOptions extends ManagerOptions {
   /**
-   * Prisma client instance - if not provided, the package will create its own
+   * Prisma client instance - required
    */
-  prismaClient?: PrismaClient;
+  prismaClient: any;
   
   /**
    * Automatically clean up completed jobs older than this many days (set to 0 to disable)
@@ -24,8 +23,7 @@ export interface PersistentQueueOptions extends ManagerOptions {
  * This is the main class users should interact with for a persistent queue
  */
 export class PersistentQueueManager<T = any> extends QueueManager<T> {
-  private prisma: PrismaClient;
-  private ownsPrismaClient: boolean = false;
+  private prisma: any;
   private cleanupTimer: NodeJS.Timeout | null = null;
   private autoCleanupDays: number;
 
@@ -43,13 +41,11 @@ export class PersistentQueueManager<T = any> extends QueueManager<T> {
     });
     
     // Set up the Prisma client
-    if (options.prismaClient) {
-      this.prisma = options.prismaClient;
-      this.ownsPrismaClient = false;
-    } else {
-      this.prisma = new PrismaClient();
-      this.ownsPrismaClient = true;
+    if (!options.prismaClient) {
+      throw new Error('PersistentQueueManager requires a prismaClient option');
     }
+    
+    this.prisma = options.prismaClient;
     
     // Set up auto-cleanup if enabled
     this.autoCleanupDays = options.autoCleanupDays || 0;
@@ -77,7 +73,7 @@ export class PersistentQueueManager<T = any> extends QueueManager<T> {
    * Get the Prisma client used by this manager
    * Useful if you want to perform custom queries
    */
-  getPrismaClient(): PrismaClient {
+  getPrismaClient(): any {
     return this.prisma;
   }
   
@@ -93,11 +89,6 @@ export class PersistentQueueManager<T = any> extends QueueManager<T> {
     
     // Shut down queues
     await this.shutdownAllQueues();
-    
-    // Disconnect Prisma if we own the client
-    if (this.ownsPrismaClient) {
-      await this.prisma.$disconnect();
-    }
   }
   
   /**
@@ -111,7 +102,7 @@ export class PersistentQueueManager<T = any> extends QueueManager<T> {
       where: { status: status as any }
     });
     
-    return jobs.map(job => ({
+    return jobs.map((job: any) => ({
       id: job.id,
       data: job.data as unknown as T,
       createdAt: new Date(job.createdAt).getTime(),

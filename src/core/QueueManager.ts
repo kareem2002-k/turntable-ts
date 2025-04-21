@@ -14,9 +14,15 @@ export class QueueManager<T = any> extends EventEmitter {
     
     // Initialize persistence service if enabled
     if (options.persistence !== false) {
-      this.persistenceService = new PersistenceService<T>({
-        batchSize: options.persistenceBatchSize || 100
-      });
+      if (options.prismaClient) {
+        this.persistenceService = new PersistenceService<T>({
+          prismaClient: options.prismaClient,
+          batchSize: options.persistenceBatchSize ||
+          100
+        });
+      } else {
+        console.warn('Warning: Persistence enabled but no prismaClient provided. Persistence will be disabled.');
+      }
     }
     
     // Initialize queues

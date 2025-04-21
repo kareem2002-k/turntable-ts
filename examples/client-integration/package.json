@@ -1,0 +1,30 @@
+{
+  "name": "turntable-queue-client-example",
+  "version": "1.0.0",
+  "description": "Example integration of turntable-queue with an existing app",
+  "main": "order-processing.ts",
+  "scripts": {
+    "start": "ts-node order-processing.ts",
+    "dev": "nodemon --exec ts-node order-processing.ts",
+    "create-env": "node create-env.js",
+    "setup": "npm run create-env && npx prisma db push && ts-node setup-db.ts",
+    "install-all": "node install.js",
+    "link-local": "cd ../.. && npm link && cd examples/client-integration && npm link turntable-queue"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.0.0",
+    "turntable-queue": "file:../..",
+    "express": "^4.18.2",
+    "nodemailer": "^6.9.3",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.17",
+    "@types/node": "^20.4.2",
+    "@types/nodemailer": "^6.4.8",
+    "nodemon": "^3.0.1",
+    "prisma": "^5.0.0",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.1.6"
+  }
+} 

@@ -4,6 +4,7 @@
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 generator client {
@@ -36,6 +37,7 @@ model Order {
   userId    String
   user      User        @relation(fields: [userId], references: [id])
   status    String      // PENDING, INVENTORY_VERIFIED, PAID, FULFILLED, FAILED, etc.
+  total     Float       // Order total
   notes     String?
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
@@ -61,28 +63,24 @@ model OrderItem {
 // Note: These models are required by turntable-queue and must be included in your schema
 
 enum JobStatus {
-  PENDING
-  ACTIVE
-  COMPLETED
-  FAILED
-  CANCELLED
+  pending
+  running
+  completed
+  failed
+  timed_out
 }
 
 model Job {
   id         String    @id @default(uuid())
-  queue      String
-  payload    Json
-  status     JobStatus @default(PENDING)
-  priority   Int       @default(0)
-  maxRetries Int       @default(3)
-  retries    Int       @default(0)
-  error      String?
-  startAfter DateTime?
-  startedAt  DateTime?
-  finishedAt DateTime?
+  data       Json      // Changed from String to Json for PostgreSQL
+  status     JobStatus @default(pending)
+  queueIndex Int       @default(0)
+  timeoutMs  Int?
   createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  startedAt  DateTime?
+  completedAt DateTime?
+  error      String?
 
-  @@index([queue, status, priority, startAfter])
   @@index([status])
+  @@index([queueIndex, status])
 } 

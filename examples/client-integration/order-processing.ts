@@ -20,20 +20,61 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// Set up the queue manager
+// Set up the queue manager with our Prisma client
 const queueManager = new PersistentQueueManager({
-  prisma,                       // Pass your existing Prisma client
-  queueCount: 2,                // Use 2 parallel queues
-  concurrencyPerQueue: 3,       // Each queue processes 3 jobs at once
-  timeoutMs: 60000,             // Jobs timeout after 60 seconds
-  processorFn: processOrderJob  // Function that processes jobs
+  prismaClient: prisma,             // Pass our Prisma client instance
+  queueCount: 2,                    // Use 2 parallel queues
+  concurrencyPerQueue: 3,           // Each queue processes 3 jobs at once
+  timeoutMs: 60000,                 // Jobs timeout after 60 seconds
+});
+
+// Function to print queue status
+function printQueueStatus() {
+  const stats = queueManager.getStats();
+  console.log('\n----- QUEUE STATUS -----');
+  
+  let totalPending = 0;
+  let totalRunning = 0;
+  
+  stats.forEach((queueStat: any) => {
+    console.log(`Queue #${queueStat.queueId}: ${queueStat.running} running, ${queueStat.length} pending (Max concurrency: ${queueStat.maxConcurrency})`);
+    totalPending += queueStat.length;
+    totalRunning += queueStat.running;
+  });
+  
+  console.log(`Total: ${totalRunning} running, ${totalPending} pending`);
+  console.log('------------------------\n');
+  
+  return { stats, totalRunning, totalPending };
+}
+
+// Add job processor event listener
+queueManager.on('job:started', async (job: any) => {
+  console.log(`Processing job ${job.id}`);
+  try {
+    await processOrderJob(job.data);
+    queueManager.completeJob(job.id);
+  } catch (error) {
+    console.error(`Error processing job ${job.id}:`, error);
+    queueManager.failJob(job.id, error instanceof Error ? error : new Error(String(error)));
+  }
 });
 
 // Define the job processor function
 async function processOrderJob(job: any) {
-  console.log(`Processing order job ${job.id}`);
+  console.log(`Processing order job:`, job);
   
-  const { orderId, action } = job.data;
+  // If this is a test job, handle differently
+  if (job.type === 'test') {
+    console.log(`Simulating processing for test job #${job.testId}`);
+    // Simulate processing time (between 2-5 seconds)
+    const processingTime = 2000 + Math.random() * 3000;
+    await new Promise(resolve => setTimeout(resolve, processingTime));
+    console.log(`Completed test job #${job.testId} in ${processingTime.toFixed(0)}ms`);
+    return { success: true, testId: job.testId };
+  }
+  
+  const { orderId, action } = job;
   
   try {
     // Retrieve the order with all related data
@@ -146,6 +187,60 @@ async function sendOrderConfirmation(order: any) {
 const app = express();
 app.use(express.json());
 
+// Test endpoint that simulates 10 requests to test the queue
+app.get('/test', async (req, res) => {
+  console.log('\n===== STARTING QUEUE TEST WITH 10 JOBS =====');
+  
+  // Print initial queue status
+  const initialStatus = printQueueStatus();
+  
+  // Create 10 test jobs
+  const jobs = [];
+  const jobPromises = [];
+  
+  for (let i = 1; i <= 10; i++) {
+    console.log(`Adding test job #${i} to queue`);
+    const jobPromise = queueManager.addJob({ 
+      type: 'test', 
+      testId: i,
+      timestamp: new Date().toISOString() 
+    });
+    jobPromises.push(jobPromise);
+  }
+  
+  // Wait for all jobs to be queued
+  const jobIds = await Promise.all(jobPromises);
+  
+  // Print queue status after adding jobs
+  const updatedStatus = printQueueStatus();
+  
+  // Set up a status tracker that will print status every second for 30 seconds
+  const duration = 30; // seconds to track
+  let elapsed = 0;
+  
+  const statusInterval = setInterval(() => {
+    elapsed++;
+    const currentStatus = printQueueStatus();
+    
+    // Stop tracking if all jobs are done or time is up
+    if (elapsed >= duration || (currentStatus.totalPending === 0 && currentStatus.totalRunning === 0)) {
+      clearInterval(statusInterval);
+      console.log('===== QUEUE TEST MONITORING COMPLETED =====\n');
+    }
+  }, 1000);
+  
+  // Return response with job information
+  return res.status(200).json({
+    success: true,
+    message: '10 test jobs added to queue',
+    jobs: jobIds.map((id, index) => ({ 
+      id, 
+      testId: index + 1 
+    })),
+    queueStatus: updatedStatus
+  });
+});
+
 // REST endpoint to create a new order and queue processing jobs
 app.post('/orders', async (req, res) => {
   try {
@@ -166,7 +261,7 @@ app.post('/orders', async (req, res) => {
     
     // Create order items with correct pricing
     const orderItems = items.map(item => {
-      const product = products.find(p => p.id === item.productId);
+      const product = products.find((p: any) => p.id === item.productId);
       if (!product) throw new Error(`Product ${item.productId} not found`);
       
       return {
@@ -178,8 +273,8 @@ app.post('/orders', async (req, res) => {
     
     // Calculate order total
     const total = orderItems.reduce((sum, item) => {
-      const product = products.find(p => p.id === item.productId)!;
-      return sum + (product.price.toNumber() * item.quantity);
+      const product = products.find((p: any) => p.id === item.productId)!;
+      return sum + (product.price * item.quantity);
     }, 0);
     
     // Create the order
@@ -239,11 +334,32 @@ app.get('/orders/:id', async (req, res) => {
   }
 });
 
+// Get queue status
+app.get('/queues/status', (req, res) => {
+  const status = printQueueStatus();
+  return res.json({
+    timestamp: new Date().toISOString(),
+    queues: status.stats,
+    summary: {
+      totalQueues: status.stats.length,
+      totalRunning: status.totalRunning,
+      totalPending: status.totalPending
+    }
+  });
+});
+
 // Start the server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log('Queue manager started');
+  
+  // Print initial queue status
+  printQueueStatus();
+  
+  console.log('\nTEST ENDPOINTS:');
+  console.log('- GET /test - Creates 10 test jobs and monitors queue status');
+  console.log('- GET /queues/status - Shows current queue status\n');
 });
 
 // Handle graceful shutdown
