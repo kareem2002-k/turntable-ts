@@ -27,6 +27,48 @@ const CONFIG = {
   }
 };
 
+// Helper function to visualize active jobs
+function visualizeActiveJobs() {
+  const jobs = Array.from(activeJobs.entries());
+  const output: string[] = [];
+  
+  if (jobs.length === 0) {
+    return '\n[EXTERNAL] No active jobs being processed';
+  }
+  
+  output.push('\n┌──────────────────── ACTIVE JOBS PROCESSING ────────────────────┐');
+  
+  jobs.forEach(([jobId, job]) => {
+    const shortId = jobId.substring(0, 8);
+    const elapsedTime = Date.now() - new Date(job.receivedAt).getTime();
+    const elapsedTimeStr = `${(elapsedTime / 1000).toFixed(1)}s`;
+    
+    let jobType = 'unknown';
+    if (job.payload && job.payload.type) {
+      jobType = job.payload.type;
+    } else if (job.payload && job.payload.action) {
+      jobType = job.payload.action;
+    }
+    
+    let progressBar = '';
+    if (job.expectedDuration) {
+      const progress = Math.min(elapsedTime / job.expectedDuration, 1);
+      const barLength = 20;
+      const filledLength = Math.floor(progress * barLength);
+      progressBar = '█'.repeat(filledLength) + '░'.repeat(barLength - filledLength);
+      progressBar += ` ${(progress * 100).toFixed(0)}%`;
+    } else {
+      progressBar = '⏳ Processing...';
+    }
+    
+    output.push(`│ Job: ${shortId.padEnd(10)} │ Type: ${jobType.padEnd(15)} │ Time: ${elapsedTimeStr.padEnd(6)} │ ${progressBar.padEnd(25)} │`);
+  });
+  
+  output.push('└─────────────────────────────────────────────────────────────────┘');
+  
+  return output.join('\n');
+}
+
 // Endpoint to receive task processing requests
 app.post('/process', (req, res) => {
   const { jobId, payload } = req.body;
@@ -35,22 +77,33 @@ app.post('/process', (req, res) => {
     return res.status(400).json({ error: 'Missing jobId or payload' });
   }
   
-  console.log(`📥 EXTERNAL SERVICE: Received job ${jobId} for processing`);
-  console.log(`   Payload: ${JSON.stringify(payload)}`);
+  console.log(`[EXTERNAL] Received job ${jobId} for processing`);
+  console.log(`[EXTERNAL] Payload: ${JSON.stringify(payload, null, 2).substring(0, 200)}${JSON.stringify(payload).length > 200 ? '...' : ''}`);
+  
+  // Generate a random processing time
+  const processingTime = Math.floor(
+    Math.random() * 
+    (CONFIG.simulationSettings.maxProcessingTime - CONFIG.simulationSettings.minProcessingTime) + 
+    CONFIG.simulationSettings.minProcessingTime
+  );
   
   // Store job in active jobs
   activeJobs.set(jobId, {
     jobId,
     payload,
     receivedAt: new Date().toISOString(),
+    expectedDuration: processingTime
   });
+  
+  // Show active jobs after adding
+  console.log(visualizeActiveJobs());
   
   // Immediately acknowledge receipt
   res.status(202).json({
     success: true,
     message: 'Task received for processing',
     jobId,
-    estimatedCompletionTime: 'Processing time varies between 3-15 seconds',
+    estimatedCompletionTime: `Processing time varies between 3-15 seconds`,
   });
   
   // Start processing
@@ -63,21 +116,34 @@ async function processJobAsync(jobId: string, payload: any) {
   const willRespond = Math.random() > CONFIG.simulationSettings.noResponseRate;
   
   if (!willRespond) {
-    console.log(`🤷‍♂️ EXTERNAL SERVICE: Job ${jobId} will not respond (simulating lost task)`);
+    console.log(`[EXTERNAL] Job ${jobId} will not respond (simulating lost task)`);
     return; // Don't process, don't respond
   }
   
-  // Generate a random processing time
-  const processingTime = Math.floor(
-    Math.random() * 
-    (CONFIG.simulationSettings.maxProcessingTime - CONFIG.simulationSettings.minProcessingTime) + 
-    CONFIG.simulationSettings.minProcessingTime
-  );
+  // Get the expected processing time from the stored job
+  const processingTime = activeJobs.get(jobId)?.expectedDuration || 
+    Math.floor(
+      Math.random() * 
+      (CONFIG.simulationSettings.maxProcessingTime - CONFIG.simulationSettings.minProcessingTime) + 
+      CONFIG.simulationSettings.minProcessingTime
+    );
   
-  console.log(`⏳ EXTERNAL SERVICE: Processing job ${jobId} (will take ${processingTime/1000}s)`);
+  console.log(`[EXTERNAL] Processing job ${jobId} (${processingTime/1000}s)`);
+  
+  // Display processing updates at intervals
+  const updateInterval = setInterval(() => {
+    if (activeJobs.has(jobId)) {
+      console.log(visualizeActiveJobs());
+    } else {
+      clearInterval(updateInterval);
+    }
+  }, 2000);
   
   // Simulate processing time
   await new Promise(resolve => setTimeout(resolve, processingTime));
+  
+  // Clear the update interval
+  clearInterval(updateInterval);
   
   // Determine success/failure based on success rate
   const isSuccess = Math.random() <= CONFIG.simulationSettings.successRate;
@@ -105,13 +171,20 @@ async function processJobAsync(jobId: string, payload: any) {
       error
     });
     
-    console.log(`✉️ EXTERNAL SERVICE: Sent ${isSuccess ? 'success' : 'failure'} webhook for job ${jobId}`);
+    console.log(`[EXTERNAL] Sent ${isSuccess ? 'success' : 'failure'} webhook for job ${jobId}`);
     
     // Remove from active jobs
     activeJobs.delete(jobId);
     
+    // Show remaining active jobs
+    if (activeJobs.size > 0) {
+      console.log(visualizeActiveJobs());
+    } else {
+      console.log('[EXTERNAL] No more active jobs');
+    }
+    
   } catch (err) {
-    console.error(`❌ EXTERNAL SERVICE: Failed to send webhook for job ${jobId}:`, err);
+    console.error(`[EXTERNAL] Failed to send webhook for job ${jobId}: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -140,8 +213,6 @@ app.post('/manual-response/:jobId', (req, res) => {
     return res.status(404).json({ error: `Job ${jobId} not found` });
   }
   
-  const job = activeJobs.get(jobId);
-  
   // Send webhook callback
   axios.post(CONFIG.webhookUrl, {
     jobId,
@@ -150,11 +221,18 @@ app.post('/manual-response/:jobId', (req, res) => {
     error: !success ? 'Manually triggered failure' : undefined
   })
   .then(() => {
-    console.log(`✉️ EXTERNAL SERVICE: Sent manually triggered ${success ? 'success' : 'failure'} webhook for job ${jobId}`);
+    console.log(`[EXTERNAL] Sent manual ${success ? 'success' : 'failure'} webhook for job ${jobId}`);
     activeJobs.delete(jobId);
+    
+    // Show remaining active jobs
+    if (activeJobs.size > 0) {
+      console.log(visualizeActiveJobs());
+    } else {
+      console.log('[EXTERNAL] No more active jobs');
+    }
   })
   .catch(err => {
-    console.error(`❌ EXTERNAL SERVICE: Failed to send manual webhook for job ${jobId}:`, err);
+    console.error(`[EXTERNAL] Failed to send manual webhook for job ${jobId}: ${err instanceof Error ? err.message : String(err)}`);
   });
   
   return res.json({
@@ -166,6 +244,12 @@ app.post('/manual-response/:jobId', (req, res) => {
 // Endpoint to list all active jobs
 app.get('/active-jobs', (req, res) => {
   const jobs = Array.from(activeJobs.values());
+  
+  console.log(`[EXTERNAL] Active jobs requested (${jobs.length} jobs)`);
+  if (jobs.length > 0) {
+    console.log(visualizeActiveJobs());
+  }
+  
   return res.json({
     count: jobs.length,
     jobs
@@ -175,38 +259,7 @@ app.get('/active-jobs', (req, res) => {
 // Start the server
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`
-🔄 External Service Simulator running on port ${PORT}
-
-This service simulates an external system that:
-1. Receives tasks from the queue API
-2. Processes them asynchronously (3-15 seconds)
-3. Sends webhook callbacks when done
-
-Configuration:
-- Success rate: ${CONFIG.simulationSettings.successRate * 100}%
-- Tasks with no response: ${CONFIG.simulationSettings.noResponseRate * 100}%
-- Processing time: ${CONFIG.simulationSettings.minProcessingTime/1000}-${CONFIG.simulationSettings.maxProcessingTime/1000} seconds
-- Webhook URL: ${CONFIG.webhookUrl}
-
-Available endpoints:
-- POST /process                      - Receive tasks for processing
-- GET  /active-jobs                  - List all active jobs
-- POST /manual-response/:jobId       - Manually trigger response for a job
-
-Example curl commands:
-
-1. Send a job for processing:
-curl -X POST http://localhost:${PORT}/process \\
-  -H "Content-Type: application/json" \\
-  -d '{"jobId": "test-job-123", "payload": {"type": "image-processing", "data": {"url": "example.com/image.jpg"}}}'
-
-2. List active jobs:
-curl http://localhost:${PORT}/active-jobs
-
-3. Manually trigger response:
-curl -X POST http://localhost:${PORT}/manual-response/test-job-123 \\
-  -H "Content-Type: application/json" \\
-  -d '{"success": true}'
-`);
+  console.log(`[EXTERNAL] Service running on port ${PORT}`);
+  console.log(`[EXTERNAL] Settings: ${CONFIG.simulationSettings.successRate * 100}% success rate, ${CONFIG.simulationSettings.noResponseRate * 100}% no-response rate`);
+  console.log(`[EXTERNAL] Processing time: ${CONFIG.simulationSettings.minProcessingTime/1000}s - ${CONFIG.simulationSettings.maxProcessingTime/1000}s`);
 }); 

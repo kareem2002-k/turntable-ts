@@ -12,7 +12,11 @@
     "start": "ts-node src/examples/server.ts",
     "dev": "ts-node-dev --respawn src/examples/server.ts",
     "webhook-system": "ts-node src/examples/run-webhook-system.ts",
-    "test": "jest"
+    "test": "jest",
+    "api-server": "ts-node src/examples/api-server.ts",
+    "external-service": "ts-node src/examples/external-service.ts",
+    "test-client": "ts-node src/examples/test-client.ts",
+    "run-test": "node scripts/run-test.js"
   },
   "keywords": [
     "queue",

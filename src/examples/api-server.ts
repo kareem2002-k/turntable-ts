@@ -1,5 +1,6 @@
 import express from 'express';
-import { QueueManager, createQueueApiRoutes } from '../';
+import { createQueueApiRoutes } from '../lib/ApiIntegration';
+import { QueueManager } from '../core/QueueManager';
 import { createTaskConnector } from './task-connector';
 
 // Create Express app
@@ -10,28 +11,68 @@ app.use(express.json());
 const queueManager = new QueueManager({
   queueCount: 3,               // Number of parallel queues (threads)
   timeoutMs: 60000,            // Default timeout (60 seconds)
-  concurrencyPerQueue: 2,      // Each queue can process 2 jobs at once
+  concurrencyPerQueue: 1,      // Each queue can process 2 jobs at once
 });
 
-// Set up event listeners for tracking job lifecycle
+// Helper function to draw queue visualization
+function visualizeQueues() {
+  const stats = queueManager.getStats();
+  const output: string[] = [];
+  
+  // Add header
+  output.push('\n┌────────────────────── QUEUE STATUS ──────────────────────┐');
+  
+  // Add each queue
+  stats.forEach((queue, index) => {
+    const queueId = `Thread #${queue.queueId}`;
+    const status = queue.isActive ? 'ACTIVE' : 'PAUSED';
+    
+    // Create visualization of running jobs
+    const runningJobs = '🟢'.repeat(queue.running) + '⚪'.repeat(queue.maxConcurrency - queue.running);
+    
+    // Create visualization of pending jobs
+    const pendingCount = queue.length;
+    const pendingJobs = pendingCount > 0 ? 
+      '🟠'.repeat(Math.min(pendingCount, 5)) + (pendingCount > 5 ? `+${pendingCount-5}` : '') : 
+      '⚪';
+    
+    // Add the queue line
+    output.push(`│ ${queueId.padEnd(10)} │ ${status.padEnd(6)} │ Running: ${runningJobs.padEnd(12)} │ Pending: ${pendingJobs.padEnd(12)} │`);
+  });
+  
+  // Add total stats
+  const totalRunning = stats.reduce((sum, q) => sum + q.running, 0);
+  const totalPending = stats.reduce((sum, q) => sum + q.length, 0);
+  const totalMaxConcurrent = stats.reduce((sum, q) => sum + q.maxConcurrency, 0);
+  const utilization = totalMaxConcurrent > 0 ? (totalRunning / totalMaxConcurrent * 100).toFixed(1) : '0.0';
+  
+  output.push('├─────────────────────────────────────────────────────────────┤');
+  output.push(`│ TOTALS: ${totalRunning}/${totalMaxConcurrent} jobs running | ${totalPending} jobs pending | ${utilization}% utilization │`);
+  output.push('└─────────────────────────────────────────────────────────────┘');
+  
+  return output.join('\n');
+}
+
+// Set up event listeners for essential job lifecycle events
 queueManager.on('job:started', (data) => {
-  console.log(`🚀 Job started: ${data.id} in queue #${data.queueIndex}`);
-  console.log(`   Job data: ${JSON.stringify(data.data)}`);
+  console.log(`[QUEUE] Job ${data.id} started in thread #${data.queueIndex}`);
+  console.log(`[QUEUE] Job data: ${JSON.stringify(data.data, null, 2).substring(0, 200)}${JSON.stringify(data.data).length > 200 ? '...' : ''}`);
+  console.log(visualizeQueues());
 });
 
 queueManager.on('job:completed', (data) => {
-  console.log(`✅ Job completed: ${data.id} in queue #${data.queueIndex}`);
-  console.log(`   Processing time: ${(data.completedAt! - data.startedAt!) / 1000} seconds`);
+  console.log(`[QUEUE] Job ${data.id} completed in ${(data.completedAt! - data.startedAt!) / 1000}s`);
+  console.log(visualizeQueues());
 });
 
 queueManager.on('job:failed', (data) => {
-  console.log(`❌ Job failed: ${data.id} in queue #${data.queueIndex}`);
-  console.log(`   Error: ${data.error?.message}`);
+  console.log(`[QUEUE] Job ${data.id} failed: ${data.error?.message || 'Unknown error'}`);
+  console.log(visualizeQueues());
 });
 
 queueManager.on('job:timeout', (data) => {
-  console.log(`⏱️ Job timed out: ${data.id} in queue #${data.queueIndex}`);
-  console.log(`   Timeout after: ${data.timeoutMs! / 1000} seconds`);
+  console.log(`[QUEUE] Job ${data.id} timed out after ${data.timeoutMs! / 1000}s`);
+  console.log(visualizeQueues());
 });
 
 // Create and configure API routes
@@ -47,9 +88,8 @@ const queueRoutes = createQueueApiRoutes(queueManager, {
       }
     };
   },
-  // Validate incoming webhooks (basic example)
+  // Validate incoming webhooks
   validateWebhook: (req) => {
-    // In a real app, you would validate signatures, tokens, etc.
     const body = req.body;
     return body && body.jobId && typeof body.status !== 'undefined';
   }
@@ -59,7 +99,6 @@ const queueRoutes = createQueueApiRoutes(queueManager, {
 app.use('/api/queue', queueRoutes);
 
 // Initialize the task connector that sends jobs to the external service
-// This connects the queue system to the external service
 const taskConnector = createTaskConnector(queueManager, 'http://localhost:3001/process');
 
 // API endpoint for processing tasks asynchronously
@@ -71,13 +110,29 @@ app.post('/api/tasks', async (req, res) => {
       return res.status(400).json({ error: 'Missing payload' });
     }
     
-    // Add job to queue system with optional custom timeout
-    const jobId = await queueManager.addJob({
+    console.log(`[API] Received task request: ${JSON.stringify(payload).substring(0, 100)}${JSON.stringify(payload).length > 100 ? '...' : ''}`);
+    
+    // Create the job data with all needed information
+    const jobData = {
       type: 'task-processing',
       payload,
       priority: priority || 'normal',
-      createdAt: new Date().toISOString()
-    }, customTimeout);
+      createdAt: new Date().toISOString(),
+      timeoutMs: customTimeout
+    };
+    
+    // Show queue before adding job
+    console.log('[API] Queue status before adding job:');
+    console.log(visualizeQueues());
+    
+    // Add job to queue system
+    const jobId = await queueManager.addJob(jobData);
+    
+    console.log(`[API] Added task to queue with job ID: ${jobId}`);
+    
+    // Show queue after adding job
+    console.log('[API] Queue status after adding job:');
+    console.log(visualizeQueues());
     
     // Return immediately with job ID
     return res.status(202).json({
@@ -88,7 +143,7 @@ app.post('/api/tasks', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Error processing task request:', error);
+    console.error('[API] Error processing task request:', error);
     return res.status(500).json({ 
       success: false, 
       error: error instanceof Error ? error.message : 'Unknown error' 
@@ -102,9 +157,13 @@ app.post('/api/connector/toggle', (req, res) => {
   
   if (enable) {
     taskConnector.start();
+    console.log('[API] Task connector started');
+    console.log(visualizeQueues());
     res.json({ status: 'running', message: 'Task connector started' });
   } else {
     taskConnector.pause();
+    console.log('[API] Task connector paused');
+    console.log(visualizeQueues());
     res.json({ status: 'paused', message: 'Task connector paused' });
   }
 });
@@ -118,6 +177,10 @@ app.get('/api/status', (req, res) => {
     const totalRunning = stats.reduce((sum, q) => sum + q.running, 0);
     const totalPending = stats.reduce((sum, q) => sum + q.length, 0);
     const totalCapacity = stats.reduce((sum, q) => sum + q.maxConcurrency, 0);
+    const utilization = totalCapacity > 0 ? (totalRunning / totalCapacity * 100) : 0;
+    
+    console.log('[API] Queue status requested:');
+    console.log(visualizeQueues());
     
     return res.json({
       success: true,
@@ -127,7 +190,7 @@ app.get('/api/status', (req, res) => {
         running: totalRunning,
         pending: totalPending,
         capacity: totalCapacity,
-        utilizationPercent: totalCapacity > 0 ? (totalRunning / totalCapacity) * 100 : 0
+        utilizationPercent: utilization
       },
       connector: {
         status: taskConnector.isRunning ? 'running' : 'paused',
@@ -136,7 +199,7 @@ app.get('/api/status', (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('Error getting status:', error);
+    console.error('[API] Error getting status:', error);
     return res.status(500).json({ 
       success: false, 
       error: error instanceof Error ? error.message : 'Unknown error' 
@@ -148,34 +211,10 @@ app.get('/api/status', (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`
-✅ Task Queue API Server running on port ${PORT}
-
-Available endpoints:
-- POST /api/tasks                - Submit a new task for processing
-- GET  /api/status               - View queue status and statistics
-- POST /api/connector/toggle     - Enable/disable the task connector
-- POST /api/queue/jobs           - Alternative endpoint to add jobs directly 
-- POST /api/queue/webhook        - Webhook endpoint for external services to report completion
-
-Current configuration:
-- ${queueManager.getStats().length} parallel queues (threads)
-- ${queueManager.getStats()[0].maxConcurrency} concurrent jobs per queue
-- ${queueManager.getStats().length * queueManager.getStats()[0].maxConcurrency} total concurrent capacity
-- Default timeout: ${60000 / 1000} seconds
-
-Example curl commands:
-
-1. Submit a task:
-curl -X POST http://localhost:${PORT}/api/tasks \\
-  -H "Content-Type: application/json" \\
-  -d '{"payload": {"action": "process-data", "data": {"id": 123}}, "customTimeout": 30000}'
-
-2. Check queue status:
-curl http://localhost:${PORT}/api/status
-
-3. Toggle the connector:
-curl -X POST http://localhost:${PORT}/api/connector/toggle \\
-  -H "Content-Type: application/json" \\
-  -d '{"enable": false}'
-`);
+✅ Queue API Server running on port ${PORT}
+   - ${queueManager.getStats().length} threads × ${queueManager.getStats()[0].maxConcurrency} concurrent jobs = ${queueManager.getStats().length * queueManager.getStats()[0].maxConcurrency} capacity
+   - Default timeout: ${60000 / 1000}s
+   - External service: ${taskConnector.externalServiceUrl}
+  `);
+  console.log(visualizeQueues());
 }); 

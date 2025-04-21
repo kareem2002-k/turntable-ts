@@ -1,5 +1,5 @@
 import express, { Request, Response, NextFunction, Router } from 'express';
-import { QueueManager } from './QueueManager';
+import { QueueManager } from '../core/QueueManager';
 import { JobRequest, WebhookCallback } from './types';
 
 /**

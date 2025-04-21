@@ -32,7 +32,7 @@ export class TaskConnector {
       try {
         await this.handleJobStarted(data);
       } catch (error) {
-        console.error(`Error handling job ${data.id}:`, error);
+        console.error(`[CONNECTOR] Failed to process job ${data.id}: ${error instanceof Error ? error.message : String(error)}`);
         // Mark job as failed
         this.queueManager.failJob(data.id, error instanceof Error ? error : new Error(String(error)));
       }
@@ -44,11 +44,11 @@ export class TaskConnector {
    */
   private async handleJobStarted(data: any) {
     if (!this.isRunning) {
-      console.log(`⏸️ Task connector is paused. Not forwarding job ${data.id} to external service.`);
+      console.log(`[CONNECTOR] Task connector paused - job ${data.id} not forwarded`);
       return;
     }
     
-    console.log(`🔄 CONNECTOR: Forwarding job ${data.id} to external service`);
+    console.log(`[CONNECTOR] Forwarding job ${data.id} to external service`);
     
     try {
       // Send to external service
@@ -57,14 +57,13 @@ export class TaskConnector {
         payload: data.data
       });
       
-      console.log(`✅ CONNECTOR: Successfully sent job ${data.id} to external service`);
-      console.log(`   External service response: ${response.status} ${response.statusText}`);
+      console.log(`[CONNECTOR] Successfully sent job ${data.id} to external service (${response.status})`);
       
       // Note: We don't mark the job as completed here.
       // The external service will send a webhook callback when done.
       
     } catch (error) {
-      console.error(`❌ CONNECTOR: Failed to send job ${data.id} to external service:`, error);
+      console.error(`[CONNECTOR] Failed to send job ${data.id} to external service: ${error instanceof Error ? error.message : String(error)}`);
       
       // Mark job as failed immediately since we couldn't even send it
       this.queueManager.failJob(data.id, new Error('Failed to send job to external service'));
@@ -76,7 +75,7 @@ export class TaskConnector {
    */
   public start() {
     this.isRunning = true;
-    console.log(`✅ Task connector started. Forwarding jobs to ${this.externalServiceUrl}`);
+    console.log(`[CONNECTOR] Started - forwarding jobs to ${this.externalServiceUrl}`);
   }
   
   /**
@@ -84,7 +83,7 @@ export class TaskConnector {
    */
   public pause() {
     this.isRunning = false;
-    console.log('⏸️ Task connector paused. Not forwarding new jobs to external service.');
+    console.log('[CONNECTOR] Paused - not forwarding new jobs');
   }
   
   /**
@@ -92,7 +91,7 @@ export class TaskConnector {
    */
   public setExternalServiceUrl(url: string) {
     this.externalServiceUrl = url;
-    console.log(`🔄 Updated external service URL to ${url}`);
+    console.log(`[CONNECTOR] External service URL updated to ${url}`);
   }
 }
 

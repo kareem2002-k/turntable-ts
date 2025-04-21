@@ -9,14 +9,14 @@ const processes: ChildProcess[] = [];
  * Start the API server process
  */
 function startApiServer(): ChildProcess {
-  console.log('🚀 Starting API Server...');
+  console.log('[SYSTEM] Starting API Server...');
   const apiServer = spawn('ts-node', ['src/examples/api-server.ts'], {
     stdio: 'inherit',
     shell: true
   });
   
   apiServer.on('error', (error) => {
-    console.error('❌ API Server Error:', error);
+    console.error('[SYSTEM] API Server Error:', error);
   });
   
   return apiServer;
@@ -26,7 +26,7 @@ function startApiServer(): ChildProcess {
  * Start the external service simulator process
  */
 function startExternalService(): ChildProcess {
-  console.log('🚀 Starting External Service Simulator...');
+  console.log('[SYSTEM] Starting External Service...');
   const externalService = spawn('ts-node', ['src/examples/external-service.ts'], {
     stdio: 'inherit',
     shell: true,
@@ -37,7 +37,7 @@ function startExternalService(): ChildProcess {
   });
   
   externalService.on('error', (error) => {
-    console.error('❌ External Service Error:', error);
+    console.error('[SYSTEM] External Service Error:', error);
   });
   
   return externalService;
@@ -50,28 +50,8 @@ function startSystem() {
   // Ensure the workspace is properly set up
   checkWorkspace();
   
-  // Display welcome banner
-  console.log(`
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                                                                              
-             🚀 WEBHOOK-BASED QUEUE SYSTEM DEMONSTRATION 🚀                    
-                                                                              
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  
-  This demo runs:
-  1. An API server with queue system (port 3000)
-  2. An external service simulator (port 3001)
-  
-  Flow:
-  - API endpoints receive requests and add them to the queue
-  - Jobs in the queue are forwarded to the external service 
-  - External service processes jobs asynchronously
-  - External service sends webhooks back to complete/fail jobs
-  - Jobs timeout if no webhook is received within the timeout period
-  
-  CTRL+C to exit all processes
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-`);
+  // Display minimal welcome message
+  console.log('[SYSTEM] Starting webhook-based queue system');
   
   // Start all processes
   processes.push(startApiServer());
@@ -84,7 +64,7 @@ function startSystem() {
   
   // Handle termination
   process.on('SIGINT', () => {
-    console.log('\n🛑 Shutting down all services...');
+    console.log('\n[SYSTEM] Shutting down all services...');
     processes.forEach(p => {
       if (!p.killed) {
         p.kill();
@@ -105,7 +85,7 @@ function checkWorkspace() {
   
   for (const file of requiredFiles) {
     if (!fs.existsSync(path.resolve(file))) {
-      console.error(`❌ Required file ${file} not found.`);
+      console.error(`[SYSTEM] Required file ${file} not found.`);
       process.exit(1);
     }
   }
@@ -115,27 +95,10 @@ function checkWorkspace() {
  * Show how to use the system
  */
 function showHowToUse() {
-  console.log(`
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✅ System is now running! Try the following commands:
-  
-  1. Submit a task to the queue:
-     curl -X POST http://localhost:3000/api/tasks \\
-       -H "Content-Type: application/json" \\
-       -d '{"payload": {"action": "process-data", "data": {"id": 123}}, "customTimeout": 30000}'
-  
-  2. Check queue status:
-     curl http://localhost:3000/api/status
-     
-  3. View active jobs in external service:
-     curl http://localhost:3000/api/status
-     
-  The external service will automatically process jobs with:
-  - 80% success rate
-  - 10% of jobs will never respond (simulates lost tasks)
-  - Processing times between 3-15 seconds
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-`);
+  console.log('[SYSTEM] Webhook queue system is running');
+  console.log('[SYSTEM] API server: http://localhost:3000');
+  console.log('[SYSTEM] External service: http://localhost:3001');
+  console.log('[SYSTEM] Use Ctrl+C to stop all services');
 }
 
 // Start the system
